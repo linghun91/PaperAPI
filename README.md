@@ -17,6 +17,7 @@
 ### 🎒 物品与背包
 - [**inventory.md**](./inventory.md) - 背包管理、物品操作、容器系统文档
 - [**tooltip.md**](./tooltip.md) - 工具提示、悬停信息、自定义显示文档
+- [**GLIDER.md**](./GLIDER.md) - 🪂 滑翔组件、装备系统、飞行功能文档
 
 ### 📊 数据与存储
 - [**datacomponent.md**](./datacomponent.md) - 数据组件、持久化存储、NBT 操作文档
