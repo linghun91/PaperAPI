@@ -326,6 +326,7 @@ private int giveItem(CommandContext<CommandSourceStack> ctx, int count) {
     return Command.SINGLE_SUCCESS;
 }
 
+```
 ### 3. 世界管理命令
 ```java
 private void registerWorldCommand(Commands commands) {
@@ -359,6 +360,7 @@ private void registerWorldCommand(Commands commands) {
     );
 }
 
+```
 ### 4. 游戏模式命令
 ```java
 private void registerGameModeCommand(Commands commands) {
@@ -396,6 +398,7 @@ private void registerGameModeCommand(Commands commands) {
     );
 }
 
+```
 ### 5. 时间管理命令
 ```java
 private void registerTimeCommand(Commands commands) {
@@ -435,6 +438,7 @@ private void registerTimeCommand(Commands commands) {
     );
 }
 
+```
 ### BasicCommand vs Brigadier原生方式对比
 
 #### BasicCommand方式示例
