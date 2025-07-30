@@ -33,6 +33,33 @@ Paper API Dialog系统是Minecraft 1.21+版本中引入的现代化用户界面�
 
 ## 技术架构
 
+### 重要：Paper API 1.21.8 正确的包导入
+
+在使用Paper API 1.21.8时，Dialog相关类的包路径与早期文档示例有所不同。以下是正确的import语句：
+
+```java
+// Dialog核心类
+import io.papermc.paper.dialog.Dialog;
+import io.papermc.paper.registry.RegistryBuilderFactory;
+import io.papermc.paper.registry.RegistryKey;
+
+// Dialog数据结构
+import io.papermc.paper.registry.data.dialog.ActionButton;
+import io.papermc.paper.registry.data.dialog.DialogBase;
+import io.papermc.paper.registry.data.dialog.DialogRegistryEntry;
+import io.papermc.paper.registry.data.dialog.body.DialogBody;
+import io.papermc.paper.registry.data.dialog.type.DialogType;
+import io.papermc.paper.registry.data.dialog.input.DialogInput;
+import io.papermc.paper.registry.data.dialog.input.TextDialogInput;
+
+// Dialog动作相关
+import io.papermc.paper.registry.data.dialog.action.DialogAction;
+import io.papermc.paper.registry.data.dialog.action.DialogActionCallback;
+
+// 注意：ClickCallback在Adventure API中
+import net.kyori.adventure.text.event.ClickCallback;
+```
+
 ### DialogManager抽象类设计
 
 我们采用抽象类模式来统一管理Dialog相关逻辑，遵循项目的统一方法原则：
@@ -54,24 +81,22 @@ public abstract class DialogManager {
     }
     
     /**
-     * 创建Dialog的统一方法
+     * 创建Dialog的统一方法（Paper API 1.21.8版本）
      * @param dialogId Dialog唯一标识
-     * @param factory Dialog工厂函数
+     * @param builder Dialog构建器配置
      * @return 创建的Dialog
      */
-    protected Dialog createDialog(String dialogId, Function<DialogRegistryEntry.Factory, Void> factory) {
+    protected Dialog createDialog(String dialogId, Consumer<RegistryBuilderFactory<Dialog, ? extends DialogRegistryEntry.Builder>> builder) {
         try {
-            DialogRegistryEntry.Factory dialogFactory = plugin.getServer().getRegistry(RegistryKey.DIALOG)
-                .createRegistryEntry(Key.key(plugin.getName().toLowerCase(), dialogId));
-            
-            factory.apply(dialogFactory);
-            DialogRegistryEntry entry = dialogFactory.build();
-            
-            Dialog dialog = Dialog.dialog(entry);
+            // Paper API 1.21.8使用Dialog.create()方法
+            Dialog dialog = Dialog.create(builder);
             dialogCache.put(dialogId, dialog);
             return dialog;
         } catch (Exception e) {
             plugin.getLogger().severe("创建Dialog失败: " + e.getMessage());
+            if (plugin.getConfig().getBoolean("debug", false)) {
+                e.printStackTrace();
+            }
             return null;
         }
     }
@@ -109,9 +134,23 @@ public abstract class DialogManager {
     }
     
     /**
+     * 加载消息配置文件
+     */
+    protected void loadMessagesConfig() {
+        File messageFile = new File(plugin.getDataFolder(), "message.yml");
+        if (!messageFile.exists()) {
+            plugin.saveResource("message.yml", false);
+        }
+        messagesConfig = YamlConfiguration.loadConfiguration(messageFile);
+    }
+    
+    /**
      * 重新加载Dialog管理器
      */
-    public abstract void reload();
+    public void reload() {
+        dialogCache.clear();
+        // 子类可以重写此方法来实现特定的重新加载逻辑
+    }
 }
 ```
 
@@ -440,6 +479,19 @@ DialogAction action = DialogAction.customClick(
 );
 ```
 
+#### 1.1 Paper API 1.21.8的ClickCallback导入问题
+
+**问题描述：**
+在Paper API 1.21.8中，`ClickCallback`类不在`io.papermc.paper.registry.data.dialog.action`包中。
+
+```java
+// ❌ 错误的import - 编译错误
+import io.papermc.paper.registry.data.dialog.action.ClickCallback;
+
+// ✅ 正确的import - ClickCallback在Adventure API中
+import net.kyori.adventure.text.event.ClickCallback;
+```
+
 #### 2. 消息配置路径处理
 
 **问题描述：**
@@ -501,6 +553,39 @@ public boolean showMainDialog(Player player) {
     Dialog mainDialog = createMainDialog();  // 每次重新创建
     return showDialog(player, mainDialog);
 }
+```
+
+#### 5. Dialog.create()方法的API变化
+
+**问题描述：**
+在Paper API 1.21.8中，Dialog创建方式与早期版本不同。
+
+```java
+// ❌ 旧版本API使用方式 - 在1.21.8中不存在
+DialogRegistryEntry.Factory dialogFactory = plugin.getServer()
+    .getRegistry(RegistryKey.DIALOG)
+    .createRegistryEntry(Key.key(plugin.getName().toLowerCase(), dialogId));
+DialogRegistryEntry entry = dialogFactory.build();
+Dialog dialog = Dialog.dialog(entry);
+
+// ✅ Paper API 1.21.8正确方式
+Dialog dialog = Dialog.create(builder); // 直接使用Dialog.create()
+```
+
+#### 6. DialogAction.customClick()参数问题
+
+**问题描述：**
+在Paper API 1.21.8中，`DialogAction.customClick()`必须传入ClickCallback.Options参数。
+
+```java
+// ❌ 错误 - 缺少Options参数
+DialogAction action = DialogAction.customClick(callback);
+
+// ✅ 正确 - 必须传入Options
+DialogAction action = DialogAction.customClick(
+    callback,
+    ClickCallback.Options.builder().build()
+);
 ```
 
 ### 性能优化建议
@@ -746,13 +831,197 @@ private List<ActionButton> createDynamicButtons(Player player) {
 
 #### 1. 项目集成步骤
 
-1. **添加依赖**：确保项目使用Paper API 1.21+
+1. **添加依赖**：确保项目使用Paper API 1.21.8+
+   ```gradle
+   dependencies {
+       compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+   }
+   ```
+
 2. **创建DialogManager**：继承我们的抽象类
 3. **配置消息文件**：添加Dialog相关消息
 4. **注册命令**：创建触发Dialog的命令
 5. **测试功能**：验证所有Dialog功能正常
 
-#### 2. 最小化集成示例
+#### 2. 完整的TestDialogManager实现示例
+
+以下是一个完整的测试Dialog实现，展示了如何创建一个包含接受/拒绝按钮的任务Dialog：
+
+```java
+package cn.i7mc.dialogs;
+
+import cn.i7mc.SagaItemManage;
+import cn.i7mc.utils.ColorUtils;
+import io.papermc.paper.dialog.Dialog;
+import io.papermc.paper.registry.data.dialog.ActionButton;
+import io.papermc.paper.registry.data.dialog.DialogBase;
+import io.papermc.paper.registry.data.dialog.DialogRegistryEntry;
+import io.papermc.paper.registry.data.dialog.action.DialogAction;
+import io.papermc.paper.registry.data.dialog.action.DialogActionCallback;
+import io.papermc.paper.registry.data.dialog.body.DialogBody;
+import io.papermc.paper.registry.data.dialog.type.DialogType;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickCallback;  // 注意：正确的import
+import org.bukkit.entity.Player;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 测试Dialog管理器
+ * 展示Dialog系统的基本使用
+ */
+public class TestDialogManager extends DialogManager {
+    
+    private static final String TEST_DIALOG_ID = "test_dialog";
+    
+    public TestDialogManager(SagaItemManage plugin) {
+        super(plugin);
+    }
+    
+    /**
+     * 显示测试Dialog
+     */
+    public boolean showTestDialog(Player player) {
+        Dialog testDialog = createTestDialog(player);
+        if (testDialog == null) {
+            player.sendMessage(ColorUtils.colorize("&c创建Dialog失败！"));
+            return false;
+        }
+        
+        return showDialog(player, testDialog);
+    }
+    
+    /**
+     * 创建测试Dialog
+     */
+    private Dialog createTestDialog(Player player) {
+        return createDialog(TEST_DIALOG_ID, factory -> {
+            DialogRegistryEntry.Builder builder = factory.empty();
+            
+            // 创建标题
+            Component title = ColorUtils.colorizeToComponent("&d初到魔塔大陆");
+            
+            // 创建内容
+            String contentText = "&7冒险者，欢迎踏入&b魔塔大陆&f这片被魔法与混沌交织的土地。" +
+                "此刻你脚下的，正是边陲要塞「落星隘口」——这里是抵御荒野魔物的第一道防线，也是无数英雄启程的起点。\n\n" +
+                "近来隘口西侧的「幽影松林」异动频发，原本零星出没的&c暗影野狼&f竟如潮水般聚集，" +
+                "它们受未知邪能蛊惑，獠牙染血，夜夜冲击要塞的防御结界。" +
+                "卫兵们已浴血奋战多日，铠甲的裂缝里渗着狼爪的划痕，箭囊早已空了大半。";
+            
+            Component content = ColorUtils.colorizeToComponent(contentText);
+            
+            // 创建Dialog主体
+            List<DialogBody> bodyList = new ArrayList<>();
+            bodyList.add(DialogBody.plainMessage(content));
+            
+            DialogBase dialogBase = DialogBase.create(
+                title,                          // 标题
+                null,                          // 外部标题
+                true,                          // 可用ESC关闭
+                false,                         // 不暂停游戏
+                DialogBase.DialogAfterAction.NONE, // 关闭后动作
+                bodyList,                      // 主体内容
+                new ArrayList<>()              // 输入组件
+            );
+            
+            builder.base(dialogBase);
+            
+            // 创建接受按钮
+            Component acceptLabel = ColorUtils.colorizeToComponent("&a接受");
+            Component acceptTooltip = ColorUtils.colorizeToComponent("&7接受任务，前往幽影松林");
+            
+            DialogActionCallback acceptCallback = (response, audience) -> {
+                if (audience instanceof Player) {
+                    handleAccept((Player) audience);
+                }
+            };
+            
+            // 注意：必须传入ClickCallback.Options
+            DialogAction acceptAction = DialogAction.customClick(
+                acceptCallback,
+                ClickCallback.Options.builder().build()
+            );
+            
+            ActionButton acceptButton = ActionButton.create(
+                acceptLabel,
+                acceptTooltip,
+                120,
+                acceptAction
+            );
+            
+            // 创建拒绝按钮
+            Component refuseLabel = ColorUtils.colorizeToComponent("&c拒绝");
+            Component refuseTooltip = ColorUtils.colorizeToComponent("&7拒绝任务，留在要塞");
+            
+            DialogActionCallback refuseCallback = (response, audience) -> {
+                if (audience instanceof Player) {
+                    handleRefuse((Player) audience);
+                }
+            };
+            
+            DialogAction refuseAction = DialogAction.customClick(
+                refuseCallback,
+                ClickCallback.Options.builder().build()
+            );
+            
+            ActionButton refuseButton = ActionButton.create(
+                refuseLabel,
+                refuseTooltip,
+                120,
+                refuseAction
+            );
+            
+            // 创建按钮列表
+            List<ActionButton> buttons = new ArrayList<>();
+            buttons.add(acceptButton);
+            buttons.add(refuseButton);
+            
+            // 设置为多操作类型
+            builder.type(DialogType.multiAction(
+                buttons,        // 按钮列表
+                null,          // 退出按钮（使用默认）
+                2              // 列数
+            ));
+        });
+    }
+    
+    /**
+     * 处理接受按钮点击
+     */
+    private void handleAccept(Player player) {
+        player.sendMessage(ColorUtils.colorize("&a你接受了任务！勇敢的冒险者，愿你凯旋归来！"));
+        
+        // 这里可以添加更多逻辑，比如：
+        // - 给玩家任务物品
+        // - 设置任务状态
+        // - 传送到任务地点等
+        
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("玩家 " + player.getName() + " 接受了魔塔大陆任务");
+        }
+    }
+    
+    /**
+     * 处理拒绝按钮点击
+     */
+    private void handleRefuse(Player player) {
+        player.sendMessage(ColorUtils.colorize("&c你拒绝了任务。也许现在还不是时候..."));
+        
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("玩家 " + player.getName() + " 拒绝了魔塔大陆任务");
+        }
+    }
+    
+    @Override
+    public void reload() {
+        dialogCache.clear();
+        loadMessagesConfig();
+    }
+}
+```
+
+#### 3. 最小化集成示例
 
 ```java
 /**
